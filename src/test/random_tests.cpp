@@ -39,9 +39,9 @@ BOOST_AUTO_TEST_CASE(fastrandom_tests)
         BOOST_CHECK_EQUAL(7, ctx.rand_uniform_delay(time_point, 9s).time_since_epoch().count());
         BOOST_CHECK_EQUAL(-6, ctx.rand_uniform_delay(time_point, -9s).time_since_epoch().count());
         BOOST_CHECK_EQUAL(1, ctx.rand_uniform_delay(time_point, 0s).time_since_epoch().count());
-        BOOST_CHECK_EQUAL(1467825113502396065, ctx.rand_uniform_delay(time_point, 9223372036854775807s).time_since_epoch().count());
-        BOOST_CHECK_EQUAL(-970181367944767837, ctx.rand_uniform_delay(time_point, -9223372036854775807s).time_since_epoch().count());
-        BOOST_CHECK_EQUAL(24761, ctx.rand_uniform_delay(time_point, 9h).time_since_epoch().count());
+        BOOST_CHECK_EQUAL(4652286523065884857, ctx.rand_uniform_delay(time_point, 9223372036854775807s).time_since_epoch().count());
+        BOOST_CHECK_EQUAL(-8813961240025683129, ctx.rand_uniform_delay(time_point, -9223372036854775807s).time_since_epoch().count());
+        BOOST_CHECK_EQUAL(26443, ctx.rand_uniform_delay(time_point, 9h).time_since_epoch().count());
     }
     BOOST_CHECK_EQUAL(ctx1.rand32(), ctx2.rand32());
     BOOST_CHECK_EQUAL(ctx1.rand32(), ctx2.rand32());
@@ -100,6 +100,52 @@ BOOST_AUTO_TEST_CASE(fastrandom_randbits)
             uint64_t rand = ctx2.randrange(range);
             BOOST_CHECK(rand < range);
         }
+    }
+}
+
+/** Verify that RandomMixin::randbits returns 0 and 1 for every requested bit. */
+BOOST_AUTO_TEST_CASE(randbits_test)
+{
+    FastRandomContext ctx_lens; //!< RNG for producing the lengths requested from ctx_test.
+    FastRandomContext ctx_test; //!< The RNG being tested.
+    int ctx_test_bitsleft{0}; //!< (Assumed value of) ctx_test::bitbuf_len
+
+    // Run the entire test 100 times.
+    for (int i = 0; i < 100; ++i) {
+        // Whether we have seen:
+        // - a zero (0) or a one (1)
+        // - for every bit position, in every requested bits (0 + 1 + 2 + ... + 64 = 2080)
+        // - for every value of ctx_test_bitsleft (0..63 = 64)
+        std::bitset<2 * 2080 * 64> seen;
+        uint64_t iters = 0;
+        while (!seen.all() && iters <= 500000) {
+            // Loop 10000 times, just to not continuously check seen.all().
+            for (int j = 0; j < 10000; ++j) {
+                // Decide on a number of bits to request (0 through 64, inclusive; don't use randbits/randrange).
+                int bits = ctx_lens.rand64() % 65;
+                // Generate that many bits.
+                uint64_t gen = ctx_test.randbits(bits);
+                // Make sure the result is in range.
+                if (bits < 64) BOOST_CHECK_EQUAL(gen >> bits, 0);
+                // Mark all the seen bits in the output.
+                for (int bit = 0; bit < bits; ++bit) {
+                    bool bitval = (gen >> bit) & 1;
+                    int idx = bitval + 2 * (bit + (bits * (bits - 1)) / 2 + 2080 * ctx_test_bitsleft);
+                    seen[idx] = true;
+                }
+                // Update ctx_test_bitself.
+                if (bits > ctx_test_bitsleft) {
+                    ctx_test_bitsleft = ctx_test_bitsleft + 64 - bits;
+                } else {
+                    ctx_test_bitsleft -= bits;
+                }
+                ++iters;
+            }
+        }
+        // In ~(404000 +- 14000) iterations every bit/bits/ctx_test_bitself combination should
+        // be exercised at least 64 times. It is exceedingly unlikely that after 500000 iterations
+        // not every bit value has been seen.
+        BOOST_CHECK(iters < 500000);
     }
 }
 
