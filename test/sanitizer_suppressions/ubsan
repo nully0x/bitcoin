@@ -72,4 +72,3 @@ shift-base:arith_uint256.cpp
 shift-base:crypto/
 shift-base:streams.h
 shift-base:FormatHDKeypath
-shift-base:xoroshiro128plusplus.h
