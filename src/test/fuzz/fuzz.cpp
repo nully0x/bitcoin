@@ -6,6 +6,7 @@
 
 #include <netaddress.h>
 #include <netbase.h>
+#include <test/util/random.h>
 #include <test/util/setup_common.h>
 #include <util/check.h>
 #include <util/fs.h>
@@ -82,6 +83,9 @@ static const TypeTestOneInput* g_test_one_input{nullptr};
 
 void initialize()
 {
+    // Make internal RNG deterministic.
+    SeedRandomForTest(SeedRand::ZEROS);
+
     // Terminate immediately if a fuzzing harness ever tries to create a TCP socket.
     CreateSock = [](const CService&) -> std::unique_ptr<Sock> { std::terminate(); };
 

@@ -635,16 +635,43 @@ static void ProcRand(unsigned char* out, int num, RNGLevel level) noexcept
     }
 }
 
-void GetRandBytes(Span<unsigned char> bytes) noexcept { ProcRand(bytes.data(), bytes.size(), RNGLevel::FAST); }
+namespace {
+
+/** Whether the normal PRNG has been overridden to produce deterministic randomness. */
+std::atomic<bool> g_deterministic_mode{false};
+
+/** Lock for g_deterministic_prng. */
+RecursiveMutex g_cs_deterministic_prng;
+
+/** Deterministic PRNG. Only used if g_deterministic_mode is true. */
+std::optional<ChaCha20> g_deterministic_prng GUARDED_BY(g_cs_deterministic_prng);
+
+} // namespace
+
+/** Internal function to set g_determinstic_rng. Only accessed from tests. */
+void MakeRandDeterministicDANGEROUS(const uint256& seed) noexcept
+{
+    LOCK(g_cs_deterministic_prng);
+    g_deterministic_prng.emplace(MakeByteSpan(seed));
+    g_deterministic_mode = true;
+}
+
+void GetRandBytes(Span<unsigned char> bytes) noexcept
+{
+    if (g_deterministic_mode.load(std::memory_order::relaxed)) {
+        LOCK(g_cs_deterministic_prng);
+        return g_deterministic_prng->Keystream(MakeWritableByteSpan(bytes));
+    }
+    ProcRand(bytes.data(), bytes.size(), RNGLevel::FAST);
+}
+
 void GetStrongRandBytes(Span<unsigned char> bytes) noexcept { ProcRand(bytes.data(), bytes.size(), RNGLevel::SLOW); }
 void RandAddPeriodic() noexcept { ProcRand(nullptr, 0, RNGLevel::PERIODIC); }
 void RandAddEvent(const uint32_t event_info) noexcept { GetRNGState().AddEvent(event_info); }
 
-bool g_mock_deterministic_tests{false};
-
 uint64_t GetRandInternal(uint64_t nMax) noexcept
 {
-    return FastRandomContext(g_mock_deterministic_tests).randrange(nMax);
+    return FastRandomContext().randrange(nMax);
 }
 
 uint256 GetRandHash() noexcept
